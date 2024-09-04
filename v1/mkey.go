@@ -1,6 +1,8 @@
 package mkey
 
 import (
+	"encoding"
+	"errors"
 	"fmt"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 	"reflect"
@@ -14,11 +16,6 @@ const (
 	MarshalErr
 	UnmarshalErr
 )
-
-type Substringer interface {
-	MarshallSubstring() (string, error)
-	UnmarshallSubstring(input string) error
-}
 
 type MultiKey[T any] struct {
 	Val T
@@ -40,7 +37,7 @@ func (m *MultiKey[T]) UnmarshalDynamoDBAttributeValue(value types.AttributeValue
 	//s := sv.Value
 }
 
-func MarshalMultiFieldKeyWithTag(input any, tag string) (*types.AttributeValueMemberS, error) {
+func MarshalFields(input any, tag string) (*types.AttributeValueMemberS, error) {
 	var parts []string
 
 	t := reflect.TypeOf(input)
@@ -60,10 +57,14 @@ func MarshalMultiFieldKeyWithTag(input any, tag string) (*types.AttributeValueMe
 		var part string
 
 		switch v := fv.Interface().(type) {
-		case string:
-			part = fmt.Sprintf("%s=%s", fn, v)
+		case encoding.TextMarshaler:
+			if bytes, err := v.MarshalText(); err != nil {
+				return nil, err
+			} else {
+				part = fmt.Sprintf("%s=%s", fn, (string)(bytes))
+			}
 		default:
-			panic(fmt.Sprintf("expected string or struct tag; got %T", fv.Interface()))
+			part = fmt.Sprintf("%s=%s", fn, v)
 		}
 
 		parts = append(parts, part)
@@ -71,4 +72,53 @@ func MarshalMultiFieldKeyWithTag(input any, tag string) (*types.AttributeValueMe
 
 	memberString := strings.Join(parts, "|")
 	return &types.AttributeValueMemberS{Value: memberString}, nil
+}
+
+func UnmarshalFields(output any, tag string, value types.AttributeValue) error {
+	avs, ok := value.(*types.AttributeValueMemberS)
+	if !ok {
+		return errors.New("must use string member av") //todo error must use string member
+	}
+
+	val := reflect.ValueOf(output).Elem()
+	t := val.Type()
+	s := avs.Value
+	// original := s // todo use in error messages
+
+	for i := range t.NumField() {
+		f := t.Field(i)
+
+		if !f.IsExported() {
+			continue
+		}
+
+		fn := f.Name + "="
+		separator := "|"
+		if name, ok := f.Tag.Lookup(tag); ok {
+			fn = name
+		}
+
+		if s, ok = strings.CutPrefix(s, fn); !ok {
+			return errors.New("cut prefix") // todo
+		}
+
+		ind := strings.Index(s, separator)
+		if ind == -1 {
+			return errors.New("no separator") //todo not found separator
+		}
+
+		v := s[:ind]
+		s = s[ind+len(separator):]
+
+		switch fv := val.Field(i).Interface().(type) {
+		case string:
+			val.Field(i).SetString(v)
+		case encoding.TextUnmarshaler:
+			if err := fv.UnmarshalText(([]byte)(v)); err != nil {
+				return err //todo better error
+			}
+		}
+	}
+
+	return nil
 }
