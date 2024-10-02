@@ -158,37 +158,39 @@ func UnmarshalFields(output any, tag string, value types.AttributeValue) error {
 			s = s[ind+len(terminator):]
 		}
 
-		switch fv := val.Field(i).Interface().(type) {
-		case string:
-			val.Field(i).SetString(v)
+		fv := val.FieldByIndex(f.Index)
+
+		switch tv := fv.Interface().(type) {
 		case encoding.TextUnmarshaler:
-			if err := fv.UnmarshalText(([]byte)(v)); err != nil {
+			if err := tv.UnmarshalText(([]byte)(v)); err != nil {
 				return fmt.Errorf("%w: cannot unmarshal text %v into %T", err, v, fv)
 			}
+		case string:
+			fv.SetString(v)
 		case int, int8, int16, int32, int64:
 			n, err := strconv.ParseInt(v, 10, 64)
 			if err != nil {
 				return err
 			}
-			val.Field(i).SetInt(n)
+			fv.SetInt(n)
 		case uint, uint8, uint16, uint32, uint64:
 			n, err := strconv.ParseUint(v, 10, 64)
 			if err != nil {
 				return err
 			}
-			val.Field(i).SetUint(n)
+			fv.SetUint(n)
 		case float64:
 			n, err := strconv.ParseFloat(v, 64)
 			if err != nil {
 				return err
 			}
-			val.Field(i).SetFloat(n)
+			fv.SetFloat(n)
 		case float32:
 			n, err := strconv.ParseFloat(v, 32)
 			if err != nil {
 				return err
 			}
-			val.Field(i).SetFloat(n)
+			fv.SetFloat(n)
 		default:
 			return fmt.Errorf("no unmarshal option for field %v of type %T", f.Name, fv)
 		}

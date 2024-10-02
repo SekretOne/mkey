@@ -78,20 +78,33 @@ func TestMarshalMultiFieldKeyWithTag(t *testing.T) {
 		{
 			name: "Non exported fields are skipped",
 			input: struct {
-				a string
-				B string
-				c string
-				D string
+				privateA string
+				B        string
+				C        string
+				privateD string
 			}{
-				a: "value-1",
-				B: "value-2",
-				c: "value-3",
-				D: "value-4",
+				B: "value-b",
+				C: "value-c",
 			},
 			want: &types.AttributeValueMemberS{
-				Value: "B=value-2|D=value-4",
+				Value: "value-b#value-c",
 			},
-			wantErr: false,
+		},
+		{
+			name: "use an explicit terminator on the last sub field",
+			input: struct {
+				One   string
+				Two   string
+				Three string `mkey:" #"`
+			}{
+				One:   "foo",
+				Two:   "biz",
+				Three: "baz",
+			},
+			want: &types.AttributeValueMemberS{
+				Value: "foo#biz#baz#",
+			},
+			withTag: TagDefaultName,
 		},
 	}
 
