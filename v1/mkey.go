@@ -10,13 +10,9 @@ import (
 	"strings"
 )
 
-const TagDefaultName = "mkey"
-
 const (
+	TagDefaultName    = "mkey"
 	defaultTerminator = "#"
-	_                 = iota
-	MarshalErr
-	UnmarshalErr
 )
 
 type MultiKey[T any] struct {

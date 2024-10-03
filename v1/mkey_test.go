@@ -123,6 +123,18 @@ func TestMarshalMultiFieldKeyWithTag(t *testing.T) {
 			withTag: TagDefaultName,
 			want:    "0.123#0.4621",
 		},
+		{
+			name: "floats repeating",
+			input: struct {
+				F32 float32
+				F64 float64
+			}{
+				F32: 1.0 / 3.0,
+				F64: 1.0 / 3.0,
+			},
+			withTag: TagDefaultName,
+			want:    "0.33333334#0.3333333333333333",
+		},
 	}
 
 	for _, tt := range tests {
