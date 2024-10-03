@@ -14,7 +14,8 @@ import (
 const TagDefaultName = "mkey"
 
 const (
-	_ = iota
+	defaultTerminator = "#"
+	_                 = iota
 	MarshalErr
 	UnmarshalErr
 )
@@ -53,6 +54,8 @@ func exportedFields(t reflect.Type) []reflect.StructField {
 	return exported
 }
 
+// parses the tag instructions under the given tag name.
+// expects
 func lookupTagInstructions(f reflect.StructField, tag string) (string, string, bool) {
 	var meta, terminator string
 
@@ -90,7 +93,7 @@ func MarshalFields(input any, tag string) (*types.AttributeValueMemberS, error) 
 
 		// if not last, set default terminator
 		if i < len(exported)-1 {
-			terminator = "#"
+			terminator = defaultTerminator
 		}
 
 		if pre, term, ok := lookupTagInstructions(f, tag); ok {
@@ -133,7 +136,7 @@ func UnmarshalFields(output any, tag string, value types.AttributeValue) error {
 
 		// if not last, set default terminator
 		if i < len(exported)-1 {
-			terminator = "#"
+			terminator = defaultTerminator
 		}
 
 		if pre, term, ok := lookupTagInstructions(f, tag); ok {
@@ -197,4 +200,36 @@ func UnmarshalFields(output any, tag string, value types.AttributeValue) error {
 	}
 
 	return nil
+}
+
+type MarshalError struct {
+	message string
+	source  error
+}
+
+func (m MarshalError) Error() string {
+	if m.source == nil {
+		return fmt.Sprintf("cannot marshal %T: %v", m.message, m.message)
+	}
+	return m.message
+}
+
+func NewMarshalError(msg string, source error) MarshalError {
+	return MarshalError{message: msg, source: source}
+}
+
+type UnmarshalError struct {
+	message string
+	source  error
+}
+
+func (u UnmarshalError) Error() string {
+	if u.source == nil {
+		return fmt.Sprintf("%v: %v", u.message, u.message)
+	}
+	return u.message
+}
+
+func NewUnmarshalError(msg string, source error) UnmarshalError {
+	return UnmarshalError{message: msg, source: source}
 }

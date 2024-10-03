@@ -106,6 +106,41 @@ func TestMarshalMultiFieldKeyWithTag(t *testing.T) {
 			},
 			withTag: TagDefaultName,
 		},
+		{
+			name: "aws example with the original ghost busters",
+			input: struct {
+				Country      string
+				Region       string
+				State        string
+				County       string
+				City         string
+				Neighborhood string
+			}{
+				Country:      "USA",
+				Region:       "East",
+				State:        "NY",
+				County:       "Queens",
+				City:         "New York",
+				Neighborhood: "Something strange",
+			},
+			want: &types.AttributeValueMemberS{
+				Value: "foo#biz#baz#",
+			},
+			withTag: TagDefaultName,
+		},
+		{
+			name: "floats",
+			input: struct {
+				F32 float32
+				F64 float64
+			}{
+				F32: 0.123,
+				F64: 0.4621,
+			},
+			withTag: TagDefaultName,
+			want:    &types.AttributeValueMemberS{Value: "0.123#0.4621"},
+			wantErr: false,
+		},
 	}
 
 	for _, tt := range tests {
