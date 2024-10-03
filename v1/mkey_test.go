@@ -1,7 +1,6 @@
 package mkey
 
 import (
-	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 	"reflect"
 	"testing"
 )
@@ -11,8 +10,7 @@ func TestMarshalMultiFieldKeyWithTag(t *testing.T) {
 		name    string
 		input   any
 		withTag string // can be blank, use default
-		want    *types.AttributeValueMemberS
-		wantErr bool
+		want    string
 	}{
 		{
 			name: "The simplest example",
@@ -23,10 +21,7 @@ func TestMarshalMultiFieldKeyWithTag(t *testing.T) {
 				A: "first",
 				B: "second",
 			},
-			want: &types.AttributeValueMemberS{
-				Value: "first#second",
-			},
-			wantErr: false,
+			want: "first#second",
 		},
 		{
 			name: "A series of strings",
@@ -40,9 +35,7 @@ func TestMarshalMultiFieldKeyWithTag(t *testing.T) {
 				Third:  "3rd",
 			},
 			withTag: "mkey",
-			want: &types.AttributeValueMemberS{
-				Value: "First=1st|Second=2nd|Third=3rd",
-			},
+			want:    "First=1st|Second=2nd|Third=3rd",
 		},
 		{
 			name: "overriding the tag",
@@ -55,9 +48,7 @@ func TestMarshalMultiFieldKeyWithTag(t *testing.T) {
 				B: "beta",
 				C: "charlie",
 			},
-			want: &types.AttributeValueMemberS{
-				Value: "a-term:alpha::b-term:beta::c-term:charlie",
-			},
+			want:    "a-term:alpha::b-term:beta::c-term:charlie",
 			withTag: TagDefaultName,
 		},
 		{
@@ -71,9 +62,7 @@ func TestMarshalMultiFieldKeyWithTag(t *testing.T) {
 				B: 0,
 				C: 30,
 			},
-			want: &types.AttributeValueMemberS{
-				Value: "-20#0#30",
-			},
+			want: "-20#0#30",
 		},
 		{
 			name: "Non exported fields are skipped",
@@ -86,9 +75,7 @@ func TestMarshalMultiFieldKeyWithTag(t *testing.T) {
 				B: "value-b",
 				C: "value-c",
 			},
-			want: &types.AttributeValueMemberS{
-				Value: "value-b#value-c",
-			},
+			want: "value-b#value-c",
 		},
 		{
 			name: "use an explicit terminator on the last sub field",
@@ -101,9 +88,7 @@ func TestMarshalMultiFieldKeyWithTag(t *testing.T) {
 				Two:   "biz",
 				Three: "baz",
 			},
-			want: &types.AttributeValueMemberS{
-				Value: "foo#biz#baz#",
-			},
+			want:    "foo#biz#baz#",
 			withTag: TagDefaultName,
 		},
 		{
@@ -123,9 +108,7 @@ func TestMarshalMultiFieldKeyWithTag(t *testing.T) {
 				City:         "New York",
 				Neighborhood: "Something strange",
 			},
-			want: &types.AttributeValueMemberS{
-				Value: "foo#biz#baz#",
-			},
+			want:    "USA#East#NY#Queens#New York#Something strange",
 			withTag: TagDefaultName,
 		},
 		{
@@ -138,25 +121,24 @@ func TestMarshalMultiFieldKeyWithTag(t *testing.T) {
 				F64: 0.4621,
 			},
 			withTag: TagDefaultName,
-			want:    &types.AttributeValueMemberS{Value: "0.123#0.4621"},
-			wantErr: false,
+			want:    "0.123#0.4621",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			got, err := MarshalFields(tt.input, tt.withTag)
-			if (err != nil) != tt.wantErr {
-				t.Errorf("MarshalFields() error = %v, wantErr %v", err, tt.wantErr)
+			if err != nil {
+				t.Errorf("MarshalFields() error = %v", err)
 				return
 			}
 			if !reflect.DeepEqual(got, tt.want) {
-				t.Errorf("MarshalFields() got = %q, want = %q", got.Value, tt.want.Value)
+				t.Errorf("MarshalFields() got = %q, want = %q", got, tt.want)
 				return
 			}
 
 			back := reflect.New(reflect.TypeOf(tt.input)).Interface()
-			err = UnmarshalFields(back, TagDefaultName, got)
+			err = UnmarshalFields(back, got, TagDefaultName)
 			if err != nil {
 				t.Error(err)
 				return

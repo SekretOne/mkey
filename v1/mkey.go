@@ -2,7 +2,6 @@ package mkey
 
 import (
 	"encoding"
-	"errors"
 	"fmt"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 	"log"
@@ -21,24 +20,29 @@ const (
 )
 
 type MultiKey[T any] struct {
-	Val      T
-	TagValue string
+	Val T
 }
 
 func (m MultiKey[T]) MarshalDynamoDBAttributeValue() (types.AttributeValue, error) {
-	//TODO implement me
-	panic("implement me")
+	s, err := MarshalFields(m.Val, TagDefaultName)
+	if err != nil {
+		return nil, err
+	}
+
+	return &types.AttributeValueMemberS{Value: s}, nil
 }
 
 func (m *MultiKey[T]) UnmarshalDynamoDBAttributeValue(value types.AttributeValue) error {
-	panic("implement me")
+	avs, ok := value.(*types.AttributeValueMemberS)
+	if !ok {
+		return fmt.Errorf("expected value to be type *types.AttributeValueMemberS; got %T", value)
+	}
 
-	//sv, ok := value.(*types.AttributeValueMemberS)
-	//if !ok {
-	//	return fmt.Errorf("expected value to be type *types.AttributeValueMemberS; got %T", value)
-	//}
-	//
-	//s := sv.Value
+	if err := UnmarshalFields(&m.Val, avs.Value, TagDefaultName); err != nil {
+		return err
+	}
+
+	return nil
 }
 
 func exportedFields(t reflect.Type) []reflect.StructField {
@@ -78,7 +82,7 @@ func lookupTagInstructions(f reflect.StructField, tag string) (string, string, b
 	return "", "", false
 }
 
-func MarshalFields(input any, tag string) (*types.AttributeValueMemberS, error) {
+func MarshalFields(input any, tag string) (string, error) {
 	var s string
 
 	t := reflect.TypeOf(input)
@@ -104,7 +108,7 @@ func MarshalFields(input any, tag string) (*types.AttributeValueMemberS, error) 
 		switch v := fv.Interface().(type) {
 		case encoding.TextMarshaler:
 			if bytes, err := v.MarshalText(); err != nil {
-				return nil, err
+				return "", err
 			} else {
 				s += meta + (string)(bytes) + terminator
 			}
@@ -113,18 +117,12 @@ func MarshalFields(input any, tag string) (*types.AttributeValueMemberS, error) 
 		}
 	}
 
-	return &types.AttributeValueMemberS{Value: s}, nil
+	return s, nil
 }
 
-func UnmarshalFields(output any, tag string, value types.AttributeValue) error {
-	avs, ok := value.(*types.AttributeValueMemberS)
-	if !ok {
-		return errors.New("must use string member av") //todo error must use string member
-	}
-
+func UnmarshalFields(output any, s, tag string) error {
 	val := reflect.ValueOf(output).Elem()
 	t := val.Type()
-	s := avs.Value
 	//original := s // todo use in error messages
 
 	exported := exportedFields(t)
@@ -144,13 +142,15 @@ func UnmarshalFields(output any, tag string, value types.AttributeValue) error {
 			terminator = term
 		}
 
-		if s, ok = strings.CutPrefix(s, meta); !ok {
-			return fmt.Errorf("expected prefix of %q not found in %q for into %s", s, meta, f.Type.Name())
+		if remaining, ok := strings.CutPrefix(s, meta); !ok {
+			return fmt.Errorf("expected prefix of %q not found in %q for into %s", meta, s, f.Type.Name())
+		} else {
+			s = remaining
 		}
 
 		ind := strings.Index(s, terminator)
 		if ind == -1 {
-			return errors.New("expected terminator of %q not found in %q for type %T")
+			return fmt.Errorf("expected terminator %q not found in string %q for type %T", terminator, s, f)
 		}
 
 		v := s
