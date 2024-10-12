@@ -164,3 +164,16 @@ func TestMarshalMultiFieldKeyWithTag(t *testing.T) {
 		})
 	}
 }
+
+func TestAssertSymmetricalInDynamodb(t *testing.T) {
+	type thingy struct {
+		A string
+	}
+
+	AssertSymmetricalInDynamodb(t,
+		MultiKey[thingy]{
+			Val: thingy{
+				A: "alpha",
+			},
+		})
+}

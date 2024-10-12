@@ -3,11 +3,13 @@ package mkey
 import (
 	"encoding"
 	"fmt"
+	"github.com/aws/aws-sdk-go-v2/feature/dynamodb/attributevalue"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 	"log"
 	"reflect"
 	"strconv"
 	"strings"
+	"testing"
 )
 
 const (
@@ -20,7 +22,19 @@ type MultiKey[T any] struct {
 }
 
 func (m MultiKey[T]) MarshalDynamoDBAttributeValue() (types.AttributeValue, error) {
-	s, err := MarshalFields(m.Val, TagDefaultName)
+	return MarshalDynamoDBAttributeValue(m.Val)
+}
+
+func (m *MultiKey[T]) UnmarshalDynamoDBAttributeValue(value types.AttributeValue) error {
+	return UnmarshalDynamoDBAttributeValue(&m.Val, value)
+}
+
+// MarshalDynamoDBAttributeValue conforms to the aws sdk v2 attributevalue.Mashaler interface.
+//
+// Always marshals to types.AttributeValueMemberS. Fields of the struct are marshalled in their declared order,
+// without meta prefix, delineated by the '#' character. No hanging terminator.
+func MarshalDynamoDBAttributeValue(input any) (types.AttributeValue, error) {
+	s, err := MarshalFields(input, TagDefaultName)
 	if err != nil {
 		return nil, err
 	}
@@ -28,13 +42,19 @@ func (m MultiKey[T]) MarshalDynamoDBAttributeValue() (types.AttributeValue, erro
 	return &types.AttributeValueMemberS{Value: s}, nil
 }
 
-func (m *MultiKey[T]) UnmarshalDynamoDBAttributeValue(value types.AttributeValue) error {
+// UnmarshalDynamoDBAttributeValue conforms to the aws sdk 2 attributevalue.Unmarshaler interface.
+//
+// Errors if the attribute value is not of string type, or cannot parse the subfields.
+//
+// Fields of the struct are unmarshalled in their declared order,  without meta prefix, delineated by the '#' character.
+// No hanging terminator.
+func UnmarshalDynamoDBAttributeValue(output any, value types.AttributeValue) error {
 	avs, ok := value.(*types.AttributeValueMemberS)
 	if !ok {
 		return fmt.Errorf("expected value to be type *types.AttributeValueMemberS; got %T", value)
 	}
 
-	if err := UnmarshalFields(&m.Val, avs.Value, TagDefaultName); err != nil {
+	if err := UnmarshalFields(output, avs.Value, TagDefaultName); err != nil {
 		return err
 	}
 
@@ -55,7 +75,8 @@ func exportedFields(t reflect.Type) []reflect.StructField {
 }
 
 // parses the tag instructions under the given tag name.
-// expects
+//
+// returns the meta, terminator and true when instructions found.
 func lookupTagInstructions(f reflect.StructField, tag string) (string, string, bool) {
 	var meta, terminator string
 
@@ -198,34 +219,38 @@ func UnmarshalFields(output any, s, tag string) error {
 	return nil
 }
 
+// MarshalError returns when a problem occurs when converting to the multi-field string format.
+//
+// Causes include:
+//   - bad tagging instructions
+//   - exported subfield has no marshalling instructions.
 type MarshalError struct {
 	message string
 	source  error
 }
 
-func (m MarshalError) Error() string {
-	if m.source == nil {
-		return fmt.Sprintf("cannot marshal %T: %v", m.message, m.message)
-	}
-	return m.message
-}
+// AssertSymmetricalInDynamodb
+func AssertSymmetricalInDynamodb[T any](t *testing.T, input T) {
+	t.Helper()
 
-func NewMarshalError(msg string, source error) MarshalError {
-	return MarshalError{message: msg, source: source}
-}
+	name := reflect.TypeOf(input).String()
 
-type UnmarshalError struct {
-	message string
-	source  error
-}
+	t.Run(name, func(t *testing.T) {
+		t.Helper()
+		m, err := attributevalue.Marshal(input)
+		if err != nil {
+			t.Fatalf("failed marshal to atttibute value using: %+v got err: %v", input, err)
+		}
 
-func (u UnmarshalError) Error() string {
-	if u.source == nil {
-		return fmt.Sprintf("%v: %v", u.message, u.message)
-	}
-	return u.message
-}
+		var output T
 
-func NewUnmarshalError(msg string, source error) UnmarshalError {
-	return UnmarshalError{message: msg, source: source}
+		err = attributevalue.Unmarshal(m, &output)
+		if err != nil {
+			t.Fatalf("failed unmarshal from atttibute value using: %+v got err: %v", m, err)
+		}
+
+		if !reflect.DeepEqual(input, output) {
+			t.Errorf("%T is not symmetrical got: %+v want: %+v", output, output, input)
+		}
+	})
 }
