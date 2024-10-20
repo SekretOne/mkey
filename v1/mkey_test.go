@@ -65,7 +65,7 @@ func TestMarshalMultiFieldKeyWithTag(t *testing.T) {
 			want: "-20#0#30",
 		},
 		{
-			name: "Non exported fields are skipped",
+			name: "unexported fields are skipped",
 			input: struct {
 				privateA string
 				B        string

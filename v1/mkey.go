@@ -3,13 +3,11 @@ package mkey
 import (
 	"encoding"
 	"fmt"
-	"github.com/aws/aws-sdk-go-v2/feature/dynamodb/attributevalue"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 	"log"
 	"reflect"
 	"strconv"
 	"strings"
-	"testing"
 )
 
 const (
@@ -51,7 +49,10 @@ func MarshalDynamoDBAttributeValue(input any) (types.AttributeValue, error) {
 func UnmarshalDynamoDBAttributeValue(output any, value types.AttributeValue) error {
 	avs, ok := value.(*types.AttributeValueMemberS)
 	if !ok {
-		return fmt.Errorf("expected value to be type *types.AttributeValueMemberS; got %T", value)
+		return newUnmarshalError(
+			fmt.Sprintf("expected value to be type *types.AttributeValueMemberS; got %T", value),
+			nil,
+		)
 	}
 
 	if err := UnmarshalFields(output, avs.Value, TagDefaultName); err != nil {
@@ -100,7 +101,7 @@ func lookupTagInstructions(f reflect.StructField, tag string) (string, string, b
 }
 
 func MarshalFields(input any, tag string) (string, error) {
-	var s string
+	var output string
 
 	t := reflect.TypeOf(input)
 
@@ -110,7 +111,7 @@ func MarshalFields(input any, tag string) (string, error) {
 	for i, f := range exported {
 		fv := reflect.ValueOf(input).FieldByIndex(f.Index)
 
-		var meta, terminator string
+		var meta, s, terminator string
 
 		// if not last, set default terminator
 		if i < len(exported)-1 {
@@ -124,17 +125,29 @@ func MarshalFields(input any, tag string) (string, error) {
 
 		switch v := fv.Interface().(type) {
 		case encoding.TextMarshaler:
-			if bytes, err := v.MarshalText(); err != nil {
-				return "", err
-			} else {
-				s += meta + (string)(bytes) + terminator
+			bytes, err := v.MarshalText()
+			if err != nil {
+				return "", newMarshalError(
+					fmt.Sprintf("mkey: fail to marshal text on %T.%s: %s", input, f.Name, err.Error()),
+					err,
+				)
 			}
+
+			s = (string)(bytes)
+		case string:
+			s = v
+		case uint, uint16, uint32, uint64, int, int8, int16, int32, int64, float32, float64:
+			s = fmt.Sprint(v)
 		default:
-			s += meta + fmt.Sprint(v) + terminator
+			return "", newMarshalError(
+				fmt.Sprintf("mkey: no marshal option on field %T.%s", input, f.Name),
+				nil)
 		}
+
+		output += meta + s + terminator
 	}
 
-	return s, nil
+	return output, nil
 }
 
 func UnmarshalFields(output any, s, tag string) error {
@@ -217,40 +230,4 @@ func UnmarshalFields(output any, s, tag string) error {
 	}
 
 	return nil
-}
-
-// MarshalError returns when a problem occurs when converting to the multi-field string format.
-//
-// Causes include:
-//   - bad tagging instructions
-//   - exported subfield has no marshalling instructions.
-type MarshalError struct {
-	message string
-	source  error
-}
-
-// AssertSymmetricalInDynamodb
-func AssertSymmetricalInDynamodb[T any](t *testing.T, input T) {
-	t.Helper()
-
-	name := reflect.TypeOf(input).String()
-
-	t.Run(name, func(t *testing.T) {
-		t.Helper()
-		m, err := attributevalue.Marshal(input)
-		if err != nil {
-			t.Fatalf("failed marshal to atttibute value using: %+v got err: %v", input, err)
-		}
-
-		var output T
-
-		err = attributevalue.Unmarshal(m, &output)
-		if err != nil {
-			t.Fatalf("failed unmarshal from atttibute value using: %+v got err: %v", m, err)
-		}
-
-		if !reflect.DeepEqual(input, output) {
-			t.Errorf("%T is not symmetrical got: %+v want: %+v", output, output, input)
-		}
-	})
 }
